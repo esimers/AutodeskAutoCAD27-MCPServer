@@ -19,12 +19,30 @@ CHM Files → 7-zip → HTML → Parser → Chunker → Indexer → MCP Server �
 - **Hybrid Indexer**: Builds FAISS vector index and BM25 lexical index
 - **MCP Server**: Exposes search tools via Model Context Protocol
 
+## New machine (clone + existing indexes)
+
+`data/` is not in git. Copy that folder from a machine that already ingested the 2027 CHMs, then:
+
+```powershell
+git clone <your-repo-url>
+cd <repo-folder>
+py -3.12 -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements-runtime.txt
+copy .grok\config.toml.example .grok\config.toml
+```
+
+Edit `.grok/config.toml` and replace every `ROOT` with this clone's absolute path (forward slashes are fine), for example `C:/work/YourRepoName`.
+
+Start Grok from this folder, run `/new`, then `/mcps`. You should see `autocad-sdk` tools (`docs.search`, `docs.get`, …), not “no tools”.
+
+You need **both** `data/index/` (search indexes) and `data/chm/` (extracted HTML). Skip `venv/` when copying — recreate it as above. First search downloads the MiniLM embedding model into that user's Hugging Face cache.
+
 ## Installation
 
 1. **Clone the repository**:
    ```bash
    git clone <repository-url>
-   cd mcp-autocad-api
+   cd <repo-folder>
    ```
 
 2. **Install dependencies**:

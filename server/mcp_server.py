@@ -25,18 +25,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from mcp.server import Server, NotificationOptions
-from mcp.server.models import InitializationOptions
+from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
-    Resource, Tool, TextContent, ImageContent, EmbeddedResource,
-    CallToolRequest, CallToolResult, ListResourcesRequest, ListResourcesResult,
-    ListToolsRequest, ListToolsResult, ReadResourceRequest, ReadResourceResult
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
 )
 
-from ingester.models import SourceType, SearchResult, NeighborInfo
-from ingester.indexer import HybridIndexer
-from ingester.link_graph import LinkGraphBuilder
+from ingester.models import SourceType
 
 
 class AutoCADMCPServer:
@@ -46,142 +46,147 @@ class AutoCADMCPServer:
         self.source = source
         self.indexer = None
         self.link_graph = None
-        self.server = Server("autocad-sdk-mcp")
-        
-        
-        self._setup_handlers()
-    
-    def _setup_handlers(self):
-        """Setup MCP server handlers"""
-        
-        @self.server.list_tools()
-        async def handle_list_tools() -> List[Tool]:
-            """List available tools"""
-            return [
-                Tool(
-                    name="docs.search",
-                    description="Search AutoCAD SDK documentation using hybrid semantic and lexical search",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search query"
-                            },
-                            "k": {
-                                "type": "integer",
-                                "description": "Number of results to return (default: 10)",
-                                "default": 10
-                            },
-                            "source": {
-                                "type": "string",
-                                "description": "SDK documentation source to search (default: arxmgd)",
-                                "enum": [s.value for s in SourceType],
-                                "default": "arxmgd"
-                            }
+        self.server = Server(
+            "autocad-sdk-mcp",
+            version="1.0.0",
+            on_list_tools=self._on_list_tools,
+            on_call_tool=self._on_call_tool,
+        )
+
+    def _tool_definitions(self) -> List[Tool]:
+        """MCP tool schemas advertised to the client."""
+        return [
+            Tool(
+                name="docs.search",
+                description="Search AutoCAD SDK documentation using hybrid semantic and lexical search",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query"
                         },
-                        "required": ["query"]
-                    }
-                ),
-                Tool(
-                    name="docs.get",
-                    description="Get full content of an SDK documentation topic by ID",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "id": {
-                                "type": "string",
-                                "description": "Document chunk ID"
-                            },
-                            "format": {
-                                "type": "string",
-                                "description": "Content format (text or html)",
-                                "enum": ["text", "html"],
-                                "default": "text"
-                            },
-                            "source": {
-                                "type": "string",
-                                "description": "CHM source filter (default: arxmgd)",
-                                "enum": [s.value for s in SourceType],
-                                "default": "arxmgd"
-                            }
+                        "k": {
+                            "type": "integer",
+                            "description": "Number of results to return (default: 10)",
+                            "default": 10
                         },
-                        "required": ["id"]
-                    }
-                ),
-                Tool(
-                    name="docs.toc",
-                    description="Get table of contents for an SDK documentation source",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "source": {
-                                "type": "string",
-                                "description": "CHM source to get TOC for",
-                                "enum": [s.value for s in SourceType],
-                                "default": "arxmgd"
-                            }
+                        "source": {
+                            "type": "string",
+                            "description": "SDK documentation source to search (default: arxmgd)",
+                            "enum": [s.value for s in SourceType],
+                            "default": "arxmgd"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            ),
+            Tool(
+                name="docs.get",
+                description="Get full content of an SDK documentation topic by ID",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Document chunk ID"
+                        },
+                        "format": {
+                            "type": "string",
+                            "description": "Content format (text or html)",
+                            "enum": ["text", "html"],
+                            "default": "text"
+                        },
+                        "source": {
+                            "type": "string",
+                            "description": "CHM source filter (default: arxmgd)",
+                            "enum": [s.value for s in SourceType],
+                            "default": "arxmgd"
+                        }
+                    },
+                    "required": ["id"]
+                }
+            ),
+            Tool(
+                name="docs.toc",
+                description="Get table of contents for an SDK documentation source",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "description": "CHM source to get TOC for",
+                            "enum": [s.value for s in SourceType],
+                            "default": "arxmgd"
                         }
                     }
-                ),
-                Tool(
-                    name="docs.neighbors",
-                    description="Get related SDK documentation (parent, children, see also)",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "id": {
-                                "type": "string",
-                                "description": "Document chunk ID"
-                            },
-                            "source": {
-                                "type": "string",
-                                "description": "CHM source filter (default: arxmgd)",
-                                "enum": [s.value for s in SourceType],
-                                "default": "arxmgd"
-                            }
+                }
+            ),
+            Tool(
+                name="docs.neighbors",
+                description="Get related SDK documentation (parent, children, see also)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Document chunk ID"
                         },
-                        "required": ["id"]
-                    }
-                ),
-                Tool(
-                    name="docs.list_sources",
-                    description="List available SDK documentation sources",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {}
-                    }
-                ),
-                Tool(
-                    name="docs.health",
-                    description="Get server health and version information",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {}
-                    }
-                )
-            ]
-        
-        @self.server.call_tool()
-        async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
-            """Handle tool calls"""
-            try:
-                if name == "docs.search":
-                    return await self._handle_search(arguments)
-                elif name == "docs.get":
-                    return await self._handle_get(arguments)
-                elif name == "docs.toc":
-                    return await self._handle_toc(arguments)
-                elif name == "docs.neighbors":
-                    return await self._handle_neighbors(arguments)
-                elif name == "docs.list_sources":
-                    return await self._handle_list_sources(arguments)
-                elif name == "docs.health":
-                    return await self._handle_health(arguments)
-                else:
-                    return [TextContent(type="text", text=f"Unknown tool: {name}")]
-            except Exception as e:
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
+                        "source": {
+                            "type": "string",
+                            "description": "CHM source filter (default: arxmgd)",
+                            "enum": [s.value for s in SourceType],
+                            "default": "arxmgd"
+                        }
+                    },
+                    "required": ["id"]
+                }
+            ),
+            Tool(
+                name="docs.list_sources",
+                description="List available SDK documentation sources",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
+            ),
+            Tool(
+                name="docs.health",
+                description="Get server health and version information",
+                inputSchema={
+                    "type": "object",
+                    "properties": {}
+                }
+            )
+        ]
+
+    async def _on_list_tools(self, ctx, params: Optional[PaginatedRequestParams]) -> ListToolsResult:
+        return ListToolsResult(tools=self._tool_definitions())
+
+    async def _on_call_tool(self, ctx, params: CallToolRequestParams) -> CallToolResult:
+        name = params.name
+        arguments = params.arguments or {}
+        try:
+            if name == "docs.search":
+                content = await self._handle_search(arguments)
+            elif name == "docs.get":
+                content = await self._handle_get(arguments)
+            elif name == "docs.toc":
+                content = await self._handle_toc(arguments)
+            elif name == "docs.neighbors":
+                content = await self._handle_neighbors(arguments)
+            elif name == "docs.list_sources":
+                content = await self._handle_list_sources(arguments)
+            elif name == "docs.health":
+                content = await self._handle_health(arguments)
+            else:
+                content = [TextContent(type="text", text=f"Unknown tool: {name}")]
+            return CallToolResult(content=content)
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error: {str(e)}")],
+                is_error=True,
+            )
     
     async def _handle_search(self, args: Dict[str, Any]) -> List[TextContent]:
         """Handle search requests"""
@@ -223,6 +228,7 @@ class AutoCADMCPServer:
                 return [TextContent(type="text", text=error_msg)]
             
             try:
+                from ingester.indexer import HybridIndexer
                 self.indexer = HybridIndexer(source=source)
                 self.indexer.load_indices()
             except Exception as e:
@@ -268,6 +274,7 @@ class AutoCADMCPServer:
         
         # Ensure indexer is loaded
         if not self.indexer or self.indexer.source != source:
+            from ingester.indexer import HybridIndexer
             self.indexer = HybridIndexer(source=source)
             self.indexer.load_indices()
         
@@ -302,6 +309,7 @@ class AutoCADMCPServer:
         if not self.link_graph:
             graph_path = project_root / "data" / "index" / source.value / "graph.json"
             if graph_path.exists():
+                from ingester.link_graph import LinkGraphBuilder
                 self.link_graph = LinkGraphBuilder(source)
                 self.link_graph.load_graph(graph_path)
         
@@ -328,6 +336,7 @@ class AutoCADMCPServer:
         
         # Ensure indexer is loaded
         if not self.indexer or self.indexer.source != source:
+            from ingester.indexer import HybridIndexer
             self.indexer = HybridIndexer(source=source)
             self.indexer.load_indices()
         
@@ -335,6 +344,7 @@ class AutoCADMCPServer:
         if not self.link_graph:
             graph_path = project_root / "data" / "index" / source.value / "graph.json"
             if graph_path.exists():
+                from ingester.link_graph import LinkGraphBuilder
                 self.link_graph = LinkGraphBuilder(source)
                 self.link_graph.load_graph(graph_path)
         
@@ -424,18 +434,7 @@ class AutoCADMCPServer:
             await self.server.run(
                 read_stream,
                 write_stream,
-                InitializationOptions(
-                    server_name="autocad-sdk-mcp",
-                    server_version="1.0.0",
-                    capabilities=self.server.get_capabilities(
-                        notification_options=NotificationOptions(
-                            prompts_changed=False,
-                            resources_changed=False,
-                            tools_changed=False
-                        ),
-                        experimental_capabilities={}
-                    )
-                )
+                self.server.create_initialization_options(),
             )
 
 

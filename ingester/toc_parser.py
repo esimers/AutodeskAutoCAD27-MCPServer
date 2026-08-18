@@ -24,19 +24,35 @@ class TOCParser:
         self.extraction_root = Path(extraction_root)
     
     def parse_hhc(self, hhc_path: str) -> List[TOCTreeNode]:
-        """Parse HHC file and return TOC tree"""
-        hhc_file = self.extraction_root / hhc_path
-        if not hhc_file.exists():
-            return []
+        """Parse HHC file and return TOC tree.
+
+        ``hhc_path`` may be a filename or a glob (e.g. ``*.hhc``). CHM
+        extracts use different names (``toc.hhc``, ``arxmgd.hhc``, ...).
+        """
+        if '*' in hhc_path:
+            matches = list(self.extraction_root.glob(hhc_path))
+            if not matches:
+                matches = list(self.extraction_root.rglob(hhc_path))
+            if not matches:
+                print(f"No HHC files matching {hhc_path} in {self.extraction_root}")
+                return []
+            hhc_file = max(matches, key=lambda p: p.stat().st_size)
+            print(f"Using TOC file: {hhc_file.name}")
+        else:
+            hhc_file = self.extraction_root / hhc_path
+            if not hhc_file.exists():
+                return []
         
         with open(hhc_file, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
         
         soup = BeautifulSoup(content, 'lxml')
         root_nodes = []
-        
-        # Find all <LI> elements (TOC entries)
-        li_elements = soup.find_all('li')
+
+        # Only walk top-level <LI> entries; children are parsed recursively.
+        # find_all('li') would flatten the tree and duplicate every node.
+        root_ul = soup.find('ul')
+        li_elements = root_ul.find_all('li', recursive=False) if root_ul else []
         
         for li in li_elements:
             node = self._parse_toc_li(li)

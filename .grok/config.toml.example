@@ -1,0 +1,13 @@
+# Copy to config.toml and replace ROOT with this clone's absolute path.
+# Example Windows: C:/work/YourRepoName
+# Forward slashes work on Windows.
+
+[mcp_servers.autocad-sdk]
+command = "ROOT/venv/Scripts/python.exe"
+args = ["-u", "ROOT/server/mcp_server.py", "--source", "arxmgd"]
+enabled = true
+startup_timeout_sec = 180
+
+[mcp_servers.autocad-sdk.env]
+PYTHONPATH = "ROOT"
+PYTHONUNBUFFERED = "1"

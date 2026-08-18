@@ -24,7 +24,8 @@ class HeadingAwareChunker:
         
         if not heading_sections:
             # No headings found, chunk by paragraphs
-            return self._chunk_by_paragraphs(page)
+            chunks = self._chunk_by_paragraphs(page)
+            return self._ensure_page_chunk(page, chunks)
         
         chunks = []
         current_chunk_text = ""
@@ -71,7 +72,18 @@ class HeadingAwareChunker:
             )
             chunks.append(chunk)
         
-        return chunks
+        return self._ensure_page_chunk(page, chunks)
+
+    def _ensure_page_chunk(self, page: DocumentPage, chunks: List[DocumentChunk]) -> List[DocumentChunk]:
+        """Keep short API-reference pages that fall below min_chunk_tokens."""
+        if chunks:
+            return chunks
+        text = (page.content or "").strip()
+        if not text:
+            return chunks
+        return [self._create_chunk(
+            page, 0, text, page.html_content, 0, len(text)
+        )]
     
     def _extract_heading_sections(self, soup: BeautifulSoup) -> List[dict]:
         """Extract sections based on headings"""

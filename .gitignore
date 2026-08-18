@@ -1,7 +1,12 @@
-__pycache__/*
-*/__pycache__/*
+__pycache__/
+*/__pycache__/
+*.pyc
 
-data/*
-venv/*
+data/
+venv/
 
+.DS_Store
 cursor-mcp-config.json
+
+# Machine-specific Grok paths — commit the .example instead
+.grok/config.toml
