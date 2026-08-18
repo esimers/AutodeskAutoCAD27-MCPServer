@@ -1,7 +1,7 @@
 import re
 from typing import List, Tuple, Dict
 from bs4 import BeautifulSoup
-from .models import DocumentPage, DocumentChunk, SourceType
+from .models import DocumentPage, DocumentChunk
 
 
 class HeadingAwareChunker:

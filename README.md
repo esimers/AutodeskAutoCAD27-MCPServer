@@ -54,13 +54,10 @@ You need **both** `data/index/` (search indexes) and `data/chm/` (extracted HTML
    pip install -r requirements-runtime.txt
    ```
 
-3. **Extract CHM files** using 7-zip:
+3. **Extract CHM files** using 7-zip. The folder name under `data/chm/` **is** the source id (any SDK, not just AutoCAD):
    ```bash
-   # Extract main .NET API documentation
-   7z x data/chm/arxmgd.chm -odata/chm/arxmgd/
-   
-   # Extract other CHM files as needed
-   7z x data/chm/arxdev.chm -odata/chm/arxdev/
+   7z x path\to\arxmgd.chm -odata/chm/arxmgd/
+   7z x path\to\inventor.chm -odata/chm/inventor/
    ```
 
 ## Usage
@@ -74,15 +71,17 @@ pip install -r requirements-ingestion.txt
 
 **Then build search indices:**
 ```bash
-# Ingest default source (arxmgd)
-python -m ingester.ingest
-
-# Ingest specific source
-python -m ingester.ingest --source arxdev
-
-# List available sources
+# List extracted folders under data/chm/
 python -m ingester.ingest --list-sources
+
+# Ingest one source (folder name)
+python -m ingester.ingest --source inventor
+
+# Ingest every extracted folder
+python -m ingester.ingest --all
 ```
+
+Each source is just a directory name: `data/chm/<name>/` → `data/index/<name>/`. Use that same `<name>` in Grok config (`--source inventor`) and in `docs.search` / `docs.get`. Keep different products in separate extract folders. Do not mix two SDKs into one folder.
 
 ### 2. Run the MCP Server
 

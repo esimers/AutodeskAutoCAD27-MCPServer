@@ -10,14 +10,14 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from ingester.indexer import HybridIndexer
-from ingester.models import SourceType
+from ingester.models import default_source, normalize_source
 
 
 class TestQueries:
     """Test queries to verify the MCP server functionality"""
     
-    def __init__(self, source: SourceType = SourceType.ARXMGD):
-        self.source = source
+    def __init__(self, source: str = None):
+        self.source = normalize_source(source or default_source())
         self.indexer = None
     
     def load_indexer(self):
@@ -72,7 +72,7 @@ class TestQueries:
                     chunk = self.indexer.get_chunk_by_id(result.id)
                     if chunk:
                         print(f"  Title: {chunk.title}")
-                        print(f"  Source: {chunk.source.value}")
+                        print(f"  Source: {chunk.source}")
                         print(f"  Content length: {len(chunk.content)} chars")
                         print(f"  Chunk {chunk.chunk_index + 1}/{chunk.total_chunks}")
                         
@@ -159,14 +159,12 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Test AutoCAD SDK MCP Server")
-    parser.add_argument("--source", default="arxmgd", 
-                       choices=[s.value for s in SourceType],
+    parser.add_argument("--source", default=None,
                        help="SDK documentation source to test")
     
     args = parser.parse_args()
     
-    source = SourceType(args.source)
-    tester = TestQueries(source=source)
+    tester = TestQueries(source=args.source)
     tester.run_all_tests()
 
 

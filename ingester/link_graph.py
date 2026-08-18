@@ -6,13 +6,13 @@ import json
 from typing import Dict, List, Set
 from pathlib import Path
 from .toc_parser import TOCTreeNode
-from .models import DocumentPage, SourceType
+from .models import DocumentPage
 
 
 class LinkGraphBuilder:
     """Builds and manages link graph from TOC and topics"""
     
-    def __init__(self, source: SourceType):
+    def __init__(self, source: str):
         self.source = source
         self.graph = {}
         self.path_to_id = {}  # Map path to page_id

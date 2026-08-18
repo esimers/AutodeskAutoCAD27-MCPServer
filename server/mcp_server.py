@@ -36,14 +36,19 @@ from mcp.types import (
     Tool,
 )
 
-from ingester.models import SourceType
+from ingester.models import (
+    default_source,
+    discover_extracted_sources,
+    discover_indexed_sources,
+    normalize_source,
+)
 
 
 class AutoCADMCPServer:
-    """MCP Server for AutoCAD SDK documentation search"""
+    """MCP Server for SDK CHM documentation search"""
     
-    def __init__(self, source: SourceType = SourceType.ARXMGD):
-        self.source = source
+    def __init__(self, source: str = None):
+        self.source = normalize_source(source or default_source())
         self.indexer = None
         self.link_graph = None
         self.server = Server(
@@ -53,12 +58,27 @@ class AutoCADMCPServer:
             on_call_tool=self._on_call_tool,
         )
 
+    def _source_schema(self, role: str) -> Dict[str, Any]:
+        indexed = discover_indexed_sources(project_root)
+        available = ", ".join(indexed) if indexed else "(none indexed yet)"
+        return {
+            "type": "string",
+            "description": (
+                f"Documentation source to {role} (default: {self.source}). "
+                f"Indexed sources: {available}"
+            ),
+            "default": self.source,
+        }
+
+    def _resolve_source(self, args: Dict[str, Any]) -> str:
+        return normalize_source(args.get("source") or self.source)
+
     def _tool_definitions(self) -> List[Tool]:
         """MCP tool schemas advertised to the client."""
         return [
             Tool(
                 name="docs.search",
-                description="Search AutoCAD SDK documentation using hybrid semantic and lexical search",
+                description="Search SDK documentation using hybrid semantic and lexical search",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -71,12 +91,7 @@ class AutoCADMCPServer:
                             "description": "Number of results to return (default: 10)",
                             "default": 10
                         },
-                        "source": {
-                            "type": "string",
-                            "description": "SDK documentation source to search (default: arxmgd)",
-                            "enum": [s.value for s in SourceType],
-                            "default": "arxmgd"
-                        }
+                        "source": self._source_schema("search"),
                     },
                     "required": ["query"]
                 }
@@ -97,12 +112,7 @@ class AutoCADMCPServer:
                             "enum": ["text", "html"],
                             "default": "text"
                         },
-                        "source": {
-                            "type": "string",
-                            "description": "CHM source filter (default: arxmgd)",
-                            "enum": [s.value for s in SourceType],
-                            "default": "arxmgd"
-                        }
+                        "source": self._source_schema("read"),
                     },
                     "required": ["id"]
                 }
@@ -113,12 +123,7 @@ class AutoCADMCPServer:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "source": {
-                            "type": "string",
-                            "description": "CHM source to get TOC for",
-                            "enum": [s.value for s in SourceType],
-                            "default": "arxmgd"
-                        }
+                        "source": self._source_schema("list TOC for"),
                     }
                 }
             ),
@@ -132,12 +137,7 @@ class AutoCADMCPServer:
                             "type": "string",
                             "description": "Document chunk ID"
                         },
-                        "source": {
-                            "type": "string",
-                            "description": "CHM source filter (default: arxmgd)",
-                            "enum": [s.value for s in SourceType],
-                            "default": "arxmgd"
-                        }
+                        "source": self._source_schema("read"),
                     },
                     "required": ["id"]
                 }
@@ -192,17 +192,15 @@ class AutoCADMCPServer:
         """Handle search requests"""
         query = args.get("query", "")
         k = args.get("k", 10)
-        source_str = args.get("source", "arxmgd")
+        source = self._resolve_source(args)
         
         if not query:
             return [TextContent(type="text", text="Error: Query is required")]
         
-        source = SourceType(source_str)
-        
         # Ensure indexer is loaded
         if not self.indexer or self.indexer.source != source:
             # Check if index files exist - use absolute path from project root
-            index_dir = project_root / "data" / "index" / source.value
+            index_dir = project_root / "data" / "index" / source
             faiss_path = index_dir / "faiss.index"
             bm25_path = index_dir / "bm25.pkl"
             
@@ -265,12 +263,10 @@ class AutoCADMCPServer:
         """Handle get content requests"""
         chunk_id = args.get("id", "")
         format_type = args.get("format", "text")
-        source_str = args.get("source", "arxmgd")
+        source = self._resolve_source(args)
         
         if not chunk_id:
             return [TextContent(type="text", text="Error: ID is required")]
-        
-        source = SourceType(source_str)
         
         # Ensure indexer is loaded
         if not self.indexer or self.indexer.source != source:
@@ -293,7 +289,7 @@ class AutoCADMCPServer:
         metadata = (
             f"Title: {chunk.title}\n"
             f"Path: {chunk.path}\n"
-            f"Source: {chunk.source.value}\n"
+            f"Source: {chunk.source}\n"
             f"Chunk: {chunk.chunk_index + 1}/{chunk.total_chunks}\n"
             f"ID: {chunk.id}\n\n"
         )
@@ -302,12 +298,11 @@ class AutoCADMCPServer:
     
     async def _handle_toc(self, args: Dict[str, Any]) -> List[TextContent]:
         """Handle table of contents requests"""
-        source_str = args.get("source", "arxmgd")
-        source = SourceType(source_str)
+        source = self._resolve_source(args)
         
         # Load TOC from graph
         if not self.link_graph:
-            graph_path = project_root / "data" / "index" / source.value / "graph.json"
+            graph_path = project_root / "data" / "index" / source / "graph.json"
             if graph_path.exists():
                 from ingester.link_graph import LinkGraphBuilder
                 self.link_graph = LinkGraphBuilder(source)
@@ -316,23 +311,21 @@ class AutoCADMCPServer:
         if not self.link_graph:
             return [TextContent(
                 type="text", 
-                text=f"Table of Contents for {source.value} not found. "
+                text=f"Table of Contents for {source} not found. "
                      f"Use docs.search to find specific topics."
             )]
         
         # Build TOC tree from graph
-        toc_text = self._build_toc_text(source.value)
+        toc_text = self._build_toc_text(source)
         return [TextContent(type="text", text=toc_text)]
     
     async def _handle_neighbors(self, args: Dict[str, Any]) -> List[TextContent]:
         """Handle neighbor requests"""
         chunk_id = args.get("id", "")
-        source_str = args.get("source", "arxmgd")
+        source = self._resolve_source(args)
         
         if not chunk_id:
             return [TextContent(type="text", text="Error: ID is required")]
-        
-        source = SourceType(source_str)
         
         # Ensure indexer is loaded
         if not self.indexer or self.indexer.source != source:
@@ -342,7 +335,7 @@ class AutoCADMCPServer:
         
         # Load link graph
         if not self.link_graph:
-            graph_path = project_root / "data" / "index" / source.value / "graph.json"
+            graph_path = project_root / "data" / "index" / source / "graph.json"
             if graph_path.exists():
                 from ingester.link_graph import LinkGraphBuilder
                 self.link_graph = LinkGraphBuilder(source)
@@ -372,7 +365,7 @@ class AutoCADMCPServer:
             neighbor_info = (
                 f"Neighbors for: {chunk.title}\n"
                 f"ID: {chunk.id}\n"
-                f"Source: {chunk.source.value}\n\n"
+                f"Source: {chunk.source}\n\n"
                 f"Link graph not available."
             )
         
@@ -380,20 +373,28 @@ class AutoCADMCPServer:
     
     async def _handle_list_sources(self, args: Dict[str, Any]) -> List[TextContent]:
         """Handle list sources requests"""
-        sources = [source.value for source in SourceType]
-        sources_text = "Available CHM documentation sources:\n\n"
-        for source in sources:
-            sources_text += f"- {source}\n"
+        indexed = discover_indexed_sources(project_root)
+        extracted = discover_extracted_sources(project_root)
+        sources_text = "Indexed sources (searchable):\n"
+        if indexed:
+            sources_text += "".join(f"- {name}\n" for name in indexed)
+        else:
+            sources_text += "- (none)\n"
+        sources_text += "\nExtracted CHM folders (ingest to index):\n"
+        if extracted:
+            sources_text += "".join(f"- {name}\n" for name in extracted)
+        else:
+            sources_text += "- (none)\n"
         
         return [TextContent(type="text", text=sources_text)]
     
     async def _handle_health(self, args: Dict[str, Any]) -> List[TextContent]:
         """Handle health check requests"""
         health_info = (
-            "AutoCAD CHM MCP Server\n"
+            "SDK CHM MCP Server\n"
             "Version: 1.0.0\n"
             "Status: Running\n"
-            f"Source: {self.source.value}\n"
+            f"Source: {self.source}\n"
             f"Indexer Loaded: {self.indexer is not None}\n"
             f"Link Graph Loaded: {self.link_graph is not None}\n"
         )
@@ -440,15 +441,17 @@ class AutoCADMCPServer:
 
 async def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(description="AutoCAD SDK MCP Server")
-    parser.add_argument("--source", default="arxmgd", 
-                       choices=[s.value for s in SourceType],
-                       help="SDK documentation source to serve")
+    parser = argparse.ArgumentParser(description="SDK CHM MCP Server")
+    parser.add_argument(
+        "--source",
+        default=None,
+        help="Default documentation source (folder name under data/index/). "
+             "Omit to use arxmgd if present, otherwise the first indexed source.",
+    )
     
     args = parser.parse_args()
     
-    source = SourceType(args.source)
-    server = AutoCADMCPServer(source=source)
+    server = AutoCADMCPServer(source=args.source)
     
     await server.run()
 

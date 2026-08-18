@@ -7,16 +7,16 @@ import re
 from typing import List, Dict, Set, Optional
 from pathlib import Path
 from bs4 import BeautifulSoup
-from .models import DocumentPage, SourceType
+from .models import DocumentPage
 
 
 class TopicParser:
     """Parser for CHM HTML topic files"""
     
-    def __init__(self, extraction_root: str, source: SourceType):
+    def __init__(self, extraction_root: str, source: str):
         self.extraction_root = Path(extraction_root)
         self.source = source
-        self.chm_base_url = f"mk:@MSITStore:{source.value}.chm::/"
+        self.chm_base_url = f"mk:@MSITStore:{source}.chm::/"
     
     def parse_all_topics(self) -> List[DocumentPage]:
         """Parse all HTML topics in the extraction directory"""
@@ -160,4 +160,4 @@ class TopicParser:
         # Use the source type and a cleaned version of the path
         relative_path = html_file.relative_to(self.extraction_root)
         clean_path = str(relative_path).replace('/', '_').replace('\\', '_').replace('.', '_')
-        return f"{self.source.value}_{clean_path}"
+        return f"{self.source}_{clean_path}"

@@ -7,7 +7,7 @@ from pathlib import Path
 import faiss
 from sentence_transformers import SentenceTransformer
 from rank_bm25 import BM25Okapi
-from .models import DocumentChunk, SearchResult, SourceType
+from .models import DocumentChunk, SearchResult, default_source, normalize_source
 
 
 class HybridIndexer:
@@ -15,13 +15,13 @@ class HybridIndexer:
     
     def __init__(self, 
                  embedding_model: str = "all-MiniLM-L6-v2",
-                 source: SourceType = SourceType.ARXMGD):
+                 source: str = None):
         self.embedding_model_name = embedding_model
-        self.source = source
+        self.source = normalize_source(source or default_source())
         
         # Use absolute path from project root to avoid working directory issues
         project_root = Path(__file__).parent.parent
-        self.index_dir = project_root / "data" / "index" / source.value
+        self.index_dir = project_root / "data" / "index" / self.source
         self.index_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize embedding model
