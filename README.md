@@ -19,23 +19,51 @@ CHM Files → 7-zip → HTML → Parser → Chunker → Indexer → MCP Server �
 - **Hybrid Indexer**: Builds FAISS vector index and BM25 lexical index
 - **MCP Server**: Exposes search tools via Model Context Protocol
 
+## Grok: use from any folder
+
+Register the server in the **user** Grok config (`~/.grok/config.toml`). That is what makes it available in every working directory.
+
+```powershell
+py -3.12 -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements-runtime.txt
+.\venv\Scripts\python.exe scripts\register_grok.py
+```
+
+Start a new Grok session (or refresh `/mcps`). You should see `autocad-sdk` tools:
+
+- `autocad-sdk__docs_search`
+- `autocad-sdk__docs_get`
+- `autocad-sdk__docs_toc`
+- `autocad-sdk__docs_neighbors`
+- `autocad-sdk__docs_list_sources`
+- `autocad-sdk__docs_health`
+
+Tool names use underscores. Dots (`docs.search`) are rejected by Grok and by the MCP spec.
+
+The register script writes this machine's clone path only into the local user config. That file is not part of the repository.
+
+To diagnose:
+
+```powershell
+grok mcp list
+grok mcp doctor autocad-sdk
+```
+
 ## New machine (clone + existing indexes)
 
 `data/` is not in git. Copy that folder from a machine that already ingested the 2027 CHMs, then:
 
 ```powershell
-git clone <your-repo-url>
-cd <repo-folder>
+git clone <repository-url>
+cd AutodeskAutoCAD27-MCPServer
 py -3.12 -m venv venv
 .\venv\Scripts\python.exe -m pip install -r requirements-runtime.txt
-copy .grok\config.toml.example .grok\config.toml
+.\venv\Scripts\python.exe scripts\register_grok.py
 ```
 
-Edit `.grok/config.toml` and replace every `ROOT` with this clone's absolute path (forward slashes are fine), for example `C:/work/YourRepoName`.
-
-Start Grok from this folder, run `/new`, then `/mcps`. You should see `autocad-sdk` tools (`docs.search`, `docs.get`, …), not “no tools”.
-
 You need **both** `data/index/` (search indexes) and `data/chm/` (extracted HTML). Skip `venv/` when copying — recreate it as above. First search downloads the MiniLM embedding model into that user's Hugging Face cache.
+
+Optional project-only setup (this folder only): copy `.grok/config.toml.example` to `.grok/config.toml` and replace `ROOT` with this clone's absolute path. Prefer the register script for any-folder use.
 
 ## Installation
 
@@ -112,7 +140,9 @@ Here are example queries that AI agents can use:
 
 The server exposes the following tools:
 
-### `docs.search`
+Grok names them `autocad-sdk__<tool>`. The server advertises:
+
+### `docs_search`
 Search documentation using hybrid semantic and lexical search.
 
 **Parameters**:
@@ -129,7 +159,7 @@ Search documentation using hybrid semantic and lexical search.
 }
 ```
 
-### `docs.get`
+### `docs_get`
 Get full content of a documentation topic by ID.
 
 **Parameters**:
@@ -137,43 +167,36 @@ Get full content of a documentation topic by ID.
 - `format` (optional): Content format ("text" or "html", default: "text")
 - `source` (optional): CHM source filter
 
-### `docs.toc`
+### `docs_toc`
 Get table of contents for a CHM source.
 
 **Parameters**:
 - `source` (optional): CHM source (default: "arxmgd")
 
-### `docs.neighbors`
+### `docs_neighbors`
 Get related documentation (parent, children, see also).
 
 **Parameters**:
 - `id` (required): Document chunk ID
 - `source` (optional): CHM source filter
 
-### `docs.list_sources`
+### `docs_list_sources`
 List available CHM documentation sources.
 
-### `docs.health`
+### `docs_health`
 Get server health and version information.
 
 ## Project Structure
 
 ```
-mcp-autocad-api/
-├── data/
-│   ├── chm/           # Input CHM files
-│   └── index/         # FAISS + BM25 artifacts
-├── ingester/
-│   ├── models.py      # Data models
-│   ├── chm_parser.py  # CHM file parser
-│   ├── chunker.py     # Heading-aware chunking
-│   ├── indexer.py     # Hybrid search indexer
-│   └── ingest.py      # Main ingestion pipeline
-├── server/
-│   └── mcp_server.py  # MCP server implementation
+AutodeskAutoCAD27-MCPServer/
+├── data/                  # Not in git (CHM extract + indexes)
+├── ingester/              # Parse, chunk, and index CHM HTML
+├── server/mcp_server.py   # MCP server
+├── scripts/register_grok.py
 ├── tests/
-│   └── test_queries.py # Test queries
-├── requirements.txt
+├── requirements-runtime.txt
+├── requirements-ingestion.txt
 └── README.md
 ```
 
@@ -199,7 +222,3 @@ These can be modified in `ingester/chunker.py`.
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
-
-## Need MCP Server for your business ?
-
-Contact me: https://dmytro-prototypes.net/

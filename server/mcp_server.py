@@ -44,6 +44,11 @@ from ingester.models import (
 )
 
 
+def _canonical_tool_name(name: str) -> str:
+    """MCP tool names may only use letters, numbers, underscore, hyphen."""
+    return (name or "").replace(".", "_")
+
+
 class AutoCADMCPServer:
     """MCP Server for SDK CHM documentation search"""
     
@@ -53,7 +58,7 @@ class AutoCADMCPServer:
         self.link_graph = None
         self.server = Server(
             "autocad-sdk-mcp",
-            version="1.0.0",
+            version="1.1.0",
             on_list_tools=self._on_list_tools,
             on_call_tool=self._on_call_tool,
         )
@@ -77,8 +82,8 @@ class AutoCADMCPServer:
         """MCP tool schemas advertised to the client."""
         return [
             Tool(
-                name="docs.search",
-                description="Search SDK documentation using hybrid semantic and lexical search",
+                name="docs_search",
+                description="Search AutoCAD SDK documentation using hybrid semantic and lexical search",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -97,7 +102,7 @@ class AutoCADMCPServer:
                 }
             ),
             Tool(
-                name="docs.get",
+                name="docs_get",
                 description="Get full content of an SDK documentation topic by ID",
                 inputSchema={
                     "type": "object",
@@ -118,7 +123,7 @@ class AutoCADMCPServer:
                 }
             ),
             Tool(
-                name="docs.toc",
+                name="docs_toc",
                 description="Get table of contents for an SDK documentation source",
                 inputSchema={
                     "type": "object",
@@ -128,7 +133,7 @@ class AutoCADMCPServer:
                 }
             ),
             Tool(
-                name="docs.neighbors",
+                name="docs_neighbors",
                 description="Get related SDK documentation (parent, children, see also)",
                 inputSchema={
                     "type": "object",
@@ -143,7 +148,7 @@ class AutoCADMCPServer:
                 }
             ),
             Tool(
-                name="docs.list_sources",
+                name="docs_list_sources",
                 description="List available SDK documentation sources",
                 inputSchema={
                     "type": "object",
@@ -151,7 +156,7 @@ class AutoCADMCPServer:
                 }
             ),
             Tool(
-                name="docs.health",
+                name="docs_health",
                 description="Get server health and version information",
                 inputSchema={
                     "type": "object",
@@ -164,20 +169,20 @@ class AutoCADMCPServer:
         return ListToolsResult(tools=self._tool_definitions())
 
     async def _on_call_tool(self, ctx, params: CallToolRequestParams) -> CallToolResult:
-        name = params.name
+        name = _canonical_tool_name(params.name)
         arguments = params.arguments or {}
         try:
-            if name == "docs.search":
+            if name == "docs_search":
                 content = await self._handle_search(arguments)
-            elif name == "docs.get":
+            elif name == "docs_get":
                 content = await self._handle_get(arguments)
-            elif name == "docs.toc":
+            elif name == "docs_toc":
                 content = await self._handle_toc(arguments)
-            elif name == "docs.neighbors":
+            elif name == "docs_neighbors":
                 content = await self._handle_neighbors(arguments)
-            elif name == "docs.list_sources":
+            elif name == "docs_list_sources":
                 content = await self._handle_list_sources(arguments)
-            elif name == "docs.health":
+            elif name == "docs_health":
                 content = await self._handle_health(arguments)
             else:
                 content = [TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -312,7 +317,7 @@ class AutoCADMCPServer:
             return [TextContent(
                 type="text", 
                 text=f"Table of Contents for {source} not found. "
-                     f"Use docs.search to find specific topics."
+                     f"Use docs_search to find specific topics."
             )]
         
         # Build TOC tree from graph
@@ -391,8 +396,8 @@ class AutoCADMCPServer:
     async def _handle_health(self, args: Dict[str, Any]) -> List[TextContent]:
         """Handle health check requests"""
         health_info = (
-            "SDK CHM MCP Server\n"
-            "Version: 1.0.0\n"
+            "AutoCAD CHM MCP Server\n"
+            "Version: 1.1.0\n"
             "Status: Running\n"
             f"Source: {self.source}\n"
             f"Indexer Loaded: {self.indexer is not None}\n"
